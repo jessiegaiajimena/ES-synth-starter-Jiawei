@@ -1,0 +1,6 @@
+{
+    "FSharp.suggestGitignore": false,
+    "files.associations": {
+        "cmath": "cpp"
+    }
+}

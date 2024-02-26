@@ -14,18 +14,18 @@ volatile uint32_t currentStepSize;
 const uint32_t sampleRate = 22000;  //Sample rate
 //Step sizes
 const uint32_t stepSizes[12] = {
-  0,  //C
-  0,  //C#
-  0,  //D
-  0,  //D#
-  0,  //E
-  0,  //F
-  0,  //F#
-  0,  //G
-  0,  //G#
-  static_cast<uint32_t>(pow(2, 32)) * 440 / sampleRate,  //A
-  0,  //A#
-  0   //B
+  51149156,  //C
+  54190643,  //C#
+  57412986,  //D
+  60826940,  //D#
+  64443898,  //E
+  68275931,  //F
+  72335830,  //F#
+  76637142,  //G
+  81194224,  //G#
+  86022284,  //A
+  91137435,  //A#
+  96556749   //B
 };
 
 //Display driver object
@@ -45,9 +45,15 @@ void setOutMuxBit(const uint8_t bitIdx, const bool value) {
 
 void sampleISR() {
   static uint32_t phaseAcc = 0;
-  phaseAcc += currentStepSize;
-  int32_t Vout = (phaseAcc >> 24) - 128;
-  analogWrite(OUTR_PIN, Vout + 128);
+  if (currentStepSize == 0){
+    analogWrite(OUTR_PIN, 0);
+  }
+  else{  
+    phaseAcc += currentStepSize;
+    int32_t Vout = (phaseAcc >> 24) - 128;
+    analogWrite(OUTR_PIN, Vout);
+  }
+
 }
 
 
@@ -104,7 +110,7 @@ void loop() {
   //check which key is pressed
   if (inputs.to_ulong() != 0xFFF){
     for (int i = 0; i < 12; i++){
-      if (inputs[i]){
+      if (!inputs[i]){
         localCurrentStepSize = stepSizes[i];
       }
     }
@@ -113,9 +119,8 @@ void loop() {
     localCurrentStepSize = 0;
   }
 
-  localCurrentStepSize = static_cast<uint32_t>(pow(2, 32)) / 440 / sampleRate,
 
-  localCurrentStepSize = 0;
+  // localCurrentStepSize = 0;
 
 
   __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);

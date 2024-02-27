@@ -23,9 +23,9 @@ std::bitset<4> readCols(){
   return result;
 }
 
-std::bitset<12> readInputs(){
-  std::bitset<12> inputs;
-  for (int i = 0; i < 3; i++){
+std::bitset<16> readInputs(){
+  std::bitset<16> inputs;
+  for (int i = 0; i < 4; i++){
     setRow(i);
     delayMicroseconds(3);
     std::bitset<4> cols = readCols();

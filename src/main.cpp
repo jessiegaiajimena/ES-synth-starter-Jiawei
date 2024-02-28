@@ -12,7 +12,7 @@
 const uint32_t interval = 100; //Display update interval
 
 struct {
-std::bitset<16> inputs;  
+std::bitset<12> inputs;  
 } sysState;
 
 volatile uint32_t currentStepSize;
@@ -61,73 +61,70 @@ void sampleISR() {
 
 }
 
-// void scanKeysTask(void * pvParameters) {
+void scanKeysTask(void * pvParameters) {
 
-//   volatile uint32_t localCurrentStepSize;
+  volatile uint32_t localCurrentStepSize;
 
-//   const TickType_t xFrequency1 = 50/portTICK_PERIOD_MS;
-//   TickType_t xLastWakeTime1 = xTaskGetTickCount();
+  const TickType_t xFrequency1 = 50/portTICK_PERIOD_MS;
+  TickType_t xLastWakeTime1 = xTaskGetTickCount();
 
-//   while (1){ 
-//     vTaskDelayUntil( &xLastWakeTime1, xFrequency1);
+  while (1){ 
+    vTaskDelayUntil( &xLastWakeTime1, xFrequency1);
 
-//     std::bitset<16> inputs;
-//     for (int i = 0; i < 4; i++){
-//       setRow(i);
-//       delayMicroseconds(3);
-//       std::bitset<4> cols = readCols();
-//       for (int j = 0; j < 4; j++){
-//         inputs[i*4+j] = cols[j];
-//       }
-//     }
-//     sysState.inputs = inputs;
+    std::bitset<12> inputs;
+    for (int i = 0; i < 4; i++){
+      setRow(i);
+      delayMicroseconds(3);
+      std::bitset<4> cols = readCols();
+      for (int j = 0; j < 4; j++){
+        inputs[i*4+j] = cols[j];
+      }
+    }
+    sysState.inputs = readInputs();
 
-//     keys = std::bitset<12>(sysState.inputs.to_string().substr(4, 16));
-//     knob = std::bitset<4>(sysState.inputs.to_string().substr(0, 4));
+    if (sysState.inputs.to_ulong() != 0xFFF){
+      for (int i = 0; i < 12; i++){
+        if (!sysState.inputs[i]){
+          localCurrentStepSize = stepSizes[i];
+        }
+      }
+    }
+    else{
+      localCurrentStepSize = 0;
+    }
 
-//     if (keys.to_ulong() != 0xFFF){
-//       for (int i = 0; i < 12; i++){
-//         if (!keys[i]){
-//           localCurrentStepSize = stepSizes[i];
-//         }
-//       }
-//     }
-//     else{
-//       localCurrentStepSize = 0;
-//     }
+    // if (knob.to_ulong() == 3)
+    // {
+    //   localCurrentStepSize *= 2;
+    // }
+    // else if (knob.to_ulong() == 12)
+    // {
+    //   localCurrentStepSize /= 2;
+    // }
+    __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+    }
+}
 
-//     if (knob.to_ulong() == 3)
-//     {
-//       localCurrentStepSize *= 2;
-//     }
-//     else if (knob.to_ulong() == 12)
-//     {
-//       localCurrentStepSize /= 2;
-//     }
-//     __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
-//     }
-// }
-
-// void displayUpdateTask(void * pvParameters) {
-//   const TickType_t xFrequency2 = 100/portTICK_PERIOD_MS;
-//   TickType_t xLastWakeTime2 = xTaskGetTickCount();
-//   static uint32_t count = 0;
-//   while (1) {
-//     vTaskDelayUntil( &xLastWakeTime2, xFrequency2);
-//     u8g2.clearBuffer();
-//     u8g2.setFont(u8g2_font_ncenB08_tr);
-//     //Display inputs
-//     for (int i = 0; i < 16; i++){
-//       u8g2.setCursor(5*(i+1), 10);
-//       u8g2.print(sysState.inputs[i]);
-//     }
-//     //Display count
-//     u8g2.setCursor(5, 30);
-//     u8g2.print(count++);
-//     u8g2.sendBuffer();
-//     digitalToggle(LED_BUILTIN);
-//   }
-// }
+void displayUpdateTask(void * pvParameters) {
+  const TickType_t xFrequency2 = 100/portTICK_PERIOD_MS;
+  TickType_t xLastWakeTime2 = xTaskGetTickCount();
+  static uint32_t count = 0;
+  while (1) {
+    vTaskDelayUntil( &xLastWakeTime2, xFrequency2);
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+    //Display inputs
+    for (int i = 0; i < 16; i++){
+      u8g2.setCursor(5*(i+1), 10);
+      u8g2.print(sysState.inputs[i]);
+    }
+    //Display count
+    u8g2.setCursor(5, 30);
+    u8g2.print(count++);
+    u8g2.sendBuffer();
+    digitalToggle(LED_BUILTIN);
+  }
+}
 
 
 void setup() {
@@ -152,92 +149,26 @@ void setup() {
   Serial.begin(9600);
   Serial.println("Hello World");
   
-  // TaskHandle_t scanKeysHandle = NULL;
-  // xTaskCreate(
-  // scanKeysTask,		/* Function that implements the task */
-  // "scanKeys",		/* Text name for the task */
-  // 64,      		/* Stack size in words, not bytes */
-  // NULL,			/* Parameter passed into the task */
-  // 1,			/* Task priority */
-  // &scanKeysHandle );	/* Pointer to store the task handle */
+  TaskHandle_t scanKeysHandle = NULL;
+  xTaskCreate(
+  scanKeysTask,		/* Function that implements the task */
+  "scanKeys",		/* Text name for the task */
+  64,      		/* Stack size in words, not bytes */
+  NULL,			/* Parameter passed into the task */
+  1,			/* Task priority */
+  &scanKeysHandle );	/* Pointer to store the task handle */
 
-  // TaskHandle_t displayUpdateHandle = NULL;
-  // xTaskCreate(
-  // displayUpdateTask,		/* Function that implements the task */
-  // "displayUpdate",		/* Text name for the task */
-  // 256 ,      		/* Stack size in words, not bytes */
-  // NULL,			/* Parameter passed into the task */
-  // 1,			/* Task priority */
-  // &displayUpdateHandle );	/* Pointer to store the task handle */
+  TaskHandle_t displayUpdateHandle = NULL;
+  xTaskCreate(
+  displayUpdateTask,		/* Function that implements the task */
+  "displayUpdate",		/* Text name for the task */
+  256 ,      		/* Stack size in words, not bytes */
+  NULL,			/* Parameter passed into the task */
+  1,			/* Task priority */
+  &displayUpdateHandle );	/* Pointer to store the task handle */
 
-  // vTaskStartScheduler();
+  vTaskStartScheduler();
 }
 
 void loop() {
-    // vTaskDelayUntil( &xLastWakeTime2, xFrequency2);
-  static uint32_t next = millis();
-  static uint32_t count = 0;
-
-  std::bitset<12> keys;
-  std::bitset<4> knob;
-
-  while (millis() < next);  //Wait for next interval
-
-  next += interval;
-
-
-  volatile uint32_t localCurrentStepSize;
-  std::bitset<16> inputs;
-  for (int i = 0; i < 4; i++){
-    setRow(i);
-    delayMicroseconds(3);
-    std::bitset<4> cols = readCols();
-    for (int j = 0; j < 4; j++){
-      inputs[i*4+j] = cols[j];
-    }
-  }
-  sysState.inputs = inputs;
-
-  
-  keys = std::bitset<12>(sysState.inputs.to_string().substr(4, 16));
-  knob = std::bitset<4>(sysState.inputs.to_string().substr(0, 4));
-
-  if (keys.to_ulong() != 0xFFF){
-    for (int i = 0; i < 12; i++){
-      if (!keys[i]){
-        localCurrentStepSize = stepSizes[i];
-      }
-    }
-  }
-  else{
-    localCurrentStepSize = 0;
-  }
-
-  if (knob.to_ulong() == 3)
-  {
-    localCurrentStepSize *= 2;
-  }
-  else if (knob.to_ulong() == 12)
-  {
-    localCurrentStepSize /= 2;
-  }
-  Serial.println(localCurrentStepSize);
-  __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
-
-
-
-
-
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_ncenB08_tr);
-  //Display inputs
-  for (int i = 0; i < 16; i++){
-    u8g2.setCursor(5*(i+1), 10);
-    u8g2.print(sysState.inputs[i]);
-  }
-  //Display count
-  u8g2.setCursor(5, 30);
-  u8g2.print(count++);
-  u8g2.sendBuffer();
-  digitalToggle(LED_BUILTIN);
 }

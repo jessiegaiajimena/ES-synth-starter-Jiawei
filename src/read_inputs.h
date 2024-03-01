@@ -14,7 +14,9 @@ void setRow(uint8_t rowIdx){
   digitalWrite(REN_PIN,HIGH);
 }
 
-std::bitset<4> readCols(){
+std::bitset<4> readCols(int rowId){
+  setRow(rowId);
+  delayMicroseconds(3);
   std::bitset<4> result;
   result[0] = digitalRead(C0_PIN);
   result[1] = digitalRead(C1_PIN);
@@ -23,12 +25,11 @@ std::bitset<4> readCols(){
   return result;
 }
 
-std::bitset<12> readInputs(){
-  std::bitset<12> inputs;
-  for (int i = 0; i < 3; i++){
-    setRow(i);
-    delayMicroseconds(3);
-    std::bitset<4> cols = readCols();
+std::bitset<16> readInputs(){
+  std::bitset<16> inputs;
+  //read keys
+  for (int i = 0; i < 4; i++){
+    std::bitset<4> cols = readCols(i);
     for (int j = 0; j < 4; j++){
       inputs[i*4+j] = cols[j];
     }

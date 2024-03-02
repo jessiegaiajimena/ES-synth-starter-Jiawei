@@ -5,7 +5,6 @@
 #include <cmath>
 
 #include "read_inputs.h"
-
 #include "pin_definitions.h"
 
 //Constants
@@ -14,29 +13,14 @@ const uint32_t interval = 100; //Display update interval
 volatile uint8_t TX_Message[8] = {0};
 
 struct {
-std::bitset<16> inputs;
-SemaphoreHandle_t mutex;  
-int knob3_value = 8;
+  std::bitset<20> inputs;
+  SemaphoreHandle_t mutex;  
+  std::array<knob, 4> knobValues;
 } sysState;
 
-
 volatile uint32_t currentStepSize;
+
 const uint32_t sampleRate = 22000;  //Sample rate
-//Step sizes
-const uint32_t stepSizes[12] = {
-  51149156,  //C
-  54190643,  //C#
-  57412986,  //D
-  60826940,  //D#
-  64443898,  //E
-  68275931,  //F
-  72335830,  //F#
-  76637142,  //G
-  81194224,  //G#
-  86022284,  //A
-  91137435,  //A#
-  96556749   //B
-};
 
 //Display driver object
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0);
@@ -61,10 +45,9 @@ void sampleISR() {
   else{  
     phaseAcc += currentStepSize;
     int32_t Vout = (phaseAcc >> 24) - 128;
-    Vout = Vout >> (8 - sysState.knob3_value);
+    Vout = Vout >> (8 - sysState.knobValues[3].current_knob_value);
     analogWrite(OUTR_PIN, Vout + 128);
   }
-
 }
 
 void scanKeysTask(void * pvParameters) {
@@ -73,47 +56,22 @@ void scanKeysTask(void * pvParameters) {
 
   const TickType_t xFrequency1 = 20/portTICK_PERIOD_MS;
   TickType_t xLastWakeTime1 = xTaskGetTickCount();
-  std::bitset<2> previous_knob3("00");
-  int previous_knob3_value = 0;
-  std::bitset<12> previou_keys;
+  std::bitset<12> keys;
+  std::bitset<8> current_knobs;
+  std::bitset<12> previou_keys("111111111111");
+  std::bitset<8> previous_knobs("00000000");
   while (1){ 
     vTaskDelayUntil( &xLastWakeTime1, xFrequency1);
 
     xSemaphoreTake(sysState.mutex, portMAX_DELAY);
     sysState.inputs = readInputs();
-    xSemaphoreGive(sysState.mutex);
 
-    // std::bitset<12> keys(sysState.inputs.to_ulong() >> 4);
-    // std::bitset<4> knob(sysState.inputs.to_ulong() & 0b1111);
-
-    std::bitset<12> keys(sysState.inputs.to_ulong() & 0b111111111111);
-    std::bitset<2> current_knob3((sysState.inputs.to_ulong() >> 12) &0b11);
+    keys = extractBits<20, 12>(sysState.inputs, 0, 12);
+    current_knobs = extractBits<20, 8>(sysState.inputs, 12, 8);
     
-    if ( (previous_knob3 == 0b00 && current_knob3 == 0b01)
-          || (previous_knob3 == 0b11 && current_knob3 == 0b10)){
+    updateKnob(sysState.knobValues, previous_knobs, current_knobs);
 
-      if (sysState.knob3_value >= 0 && sysState.knob3_value < 8){
-        sysState.knob3_value += 1;
-      }
-      previous_knob3_value = 1;
-    }
-
-    else if ((previous_knob3 == 0b01 && current_knob3 == 0b00)
-            || (previous_knob3 == 0b10 && current_knob3 == 0b11)){
-
-      if (sysState.knob3_value > 0 && sysState.knob3_value <= 8){
-        sysState.knob3_value -= 1;
-      }
-      previous_knob3_value = -1;
-    }
-
-    else if (previous_knob3[0] != current_knob3[0] && previous_knob3[1] != current_knob3[1]){
-      if (sysState.knob3_value > 0 && sysState.knob3_value < 8){
-        sysState.knob3_value += previous_knob3_value;
-      }
-    }
-
-    previous_knob3 = current_knob3;
+    xSemaphoreGive(sysState.mutex);
 
     if (keys.to_ulong() != 0xFFF){
       for (int i = 0; i < 12; i++){
@@ -144,15 +102,18 @@ void displayUpdateTask(void * pvParameters) {
     xSemaphoreTake(sysState.mutex, portMAX_DELAY);
     
     //Display inputs
-    for (int i = 0; i < 16; i++){
+    for (int i = 0; i < 20; i++){
       u8g2.setCursor(5*(i+1), 10);
       u8g2.print(sysState.inputs[i]);
     }
     xSemaphoreGive(sysState.mutex);
 
-    //Display count
-    u8g2.setCursor(120, 10);
-    u8g2.print(sysState.knob3_value);
+    //Display knobs
+    for (int i = 0; i < 4; i++){
+      u8g2.setCursor(10*(i+1), 20);
+      u8g2.print(sysState.knobValues[i].current_knob_value);
+    }
+    
 
     u8g2.setCursor(66,30);
     u8g2.print((char) TX_Message[0]);

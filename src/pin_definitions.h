@@ -32,6 +32,21 @@ const int DRST_BIT = 4;
 const int HKOW_BIT = 5;
 const int HKOE_BIT = 6;
 
+const uint32_t stepSizes[12] = {
+  51149156,  //C
+  54190643,  //C#
+  57412986,  //D
+  60826940,  //D#
+  64443898,  //E
+  68275931,  //F
+  72335830,  //F#
+  76637142,  //G
+  81194224,  //G#
+  86022284,  //A
+  91137435,  //A#
+  96556749   //B
+};
+
 void set_pin_directions(){
     pinMode(RA0_PIN, OUTPUT);
     pinMode(RA1_PIN, OUTPUT);

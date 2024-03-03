@@ -11,6 +11,7 @@ const std::size_t inputSize = 20;
 struct knob{
   int current_knob_value = 8;
   int lastIncrement = 8;
+  int clickState = 0;
 };
 
 void setRow(uint8_t rowIdx){
@@ -70,11 +71,10 @@ void readOneKnob(knob& knob, std::bitset<2> previous_knobs, std::bitset<2> curre
   }
 }
 
-void updateKnob(std::array<knob, 4>& knobValues, std::bitset<8>& previous_knobs, std::bitset<8> current_knobs){
+void updateKnob(std::array<knob, 4>& knobValues, std::bitset<8> previous_knobs, std::bitset<8> current_knobs){
   for (int i = 0; i < 4; i++){
     readOneKnob(knobValues[3-i], extractBits<8,2>(previous_knobs, 2*i, 2), extractBits<8,2>(current_knobs, 2*i, 2));
   }
-  previous_knobs = current_knobs;
 }
 
-#endif  // PIN_DEFINITIONS_H
+#endif

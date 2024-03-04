@@ -3,6 +3,7 @@
 #include <STM32FreeRTOS.h>
 #include <bitset>
 #include <ES_CAN.h>
+#include <cmath>
 
 #include "read_inputs.h"
 #include "pin_definitions.h"
@@ -14,7 +15,12 @@ uint32_t ID = 0x123; //CAN ID
 uint8_t RX_Message[8] = {0};  //CAN RX message
 volatile uint8_t TX_Message[8] = {0}; //CAN TX message
 
-QueueHandle_t msgInQ; // Message input queue
+//Create message input and output queues
+//36 messages of 8 bytes, each message takes around 0.7ms to process
+QueueHandle_t msgInQ = xQueueCreate(36,8);; // Message input queue
+QueueHandle_t msgOutQ = xQueueCreate(36,8);; // Message output queue
+
+SemaphoreHandle_t CAN_TX_Semaphore; //CAN TX semaphore
 
 //Struct to hold system state
 struct {
@@ -57,8 +63,13 @@ void CAN_RX_ISR (void) {
 	xQueueSendFromISR(msgInQ, RX_Message_ISR, NULL);
 }
 
+void CAN_TX_ISR (void) {
+	xSemaphoreGiveFromISR(CAN_TX_Semaphore, NULL);
+}
+
 void scanKeysTask(void * pvParameters) {
 
+  
   // volatile uint32_t localCurrentStepSize;
 
   const TickType_t xFrequency1 = 20/portTICK_PERIOD_MS;
@@ -90,11 +101,13 @@ void scanKeysTask(void * pvParameters) {
       //   localCurrentStepSize = 0;
       // }
       
+      // Decode keys
       if (keys[i] != previou_keys[i]){
         TX_Message[0] = keys[i] ? 'R' : 'P';
         TX_Message[1] = i;
         TX_Message[2] = 4;
-        CAN_TX(0x123, const_cast<uint8_t*>(TX_Message));
+        // CAN_TX(0x123, const_cast<uint8_t*>(TX_Message));
+        xQueueSend( msgOutQ, const_cast<uint8_t*>(TX_Message), portMAX_DELAY);
       }
     }
 
@@ -128,20 +141,20 @@ void displayUpdateTask(void * pvParameters) {
       u8g2.print(sysState.knobValues[i].current_knob_value);
     }
 
-    u8g2.setCursor(66,30);
-    u8g2.print((char) RX_Message[0]);
-    u8g2.print(RX_Message[1]);
-    u8g2.print(RX_Message[2]);
-
+    // u8g2.setCursor(66,30);
+    // u8g2.print((char) RX_Message[0]);
+    // u8g2.print(RX_Message[1]);
+    // u8g2.print(RX_Message[2]);
 
     u8g2.sendBuffer();
-
 	  
     digitalToggle(LED_BUILTIN);
   }
 }
 
 void decodeTask(void * pvParameters) {
+  std::bitset<12> keys_1;
+  std::bitset<12> previou_keys_1("111111111111");
   volatile uint32_t localCurrentStepSize;
   while (1) {
     xQueueReceive(msgInQ, RX_Message, portMAX_DELAY);
@@ -151,16 +164,39 @@ void decodeTask(void * pvParameters) {
     Serial.println();
 
     if (RX_Message[0] == 'P'){
-      localCurrentStepSize = stepSizes[RX_Message[1]];
+      sysState.inputs[RX_Message[1]] = 0;
     }
     else{
-      localCurrentStepSize = 0;
+      sysState.inputs[RX_Message[1]] = 1;
     }
+    keys_1 = extractBits<20, 12>(sysState.inputs, 0, 12);
+    for (int i = 0; i < 12; i++){
+      if (keys_1.to_ulong() != 0xFFF){
+        if (keys_1[i] != previou_keys_1[i]){
+          localCurrentStepSize = keys_1[i] ? localCurrentStepSize+ stepSizes[i] : localCurrentStepSize - stepSizes[i];
+        }
+      }
+      else{
+        localCurrentStepSize = 0;
+      }
+    }
+    previou_keys_1 = keys_1;
+    localCurrentStepSize = localCurrentStepSize * pow(2, sysState.knobValues[2].current_knob_value-4);
     __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
   }
 }
 
+void CAN_TX_Task (void * pvParameters) {
+	uint8_t msgOut[8];
+	while (1) {
+		xQueueReceive(msgOutQ, msgOut, portMAX_DELAY);
+		xSemaphoreTake(CAN_TX_Semaphore, portMAX_DELAY);
+		CAN_TX(0x123, msgOut);
+	}
+}
+
 void setup() {
+  sysState.knobValues[2].current_knob_value = 4;
   //Set pin directions
   set_pin_directions();
 
@@ -179,15 +215,15 @@ void setup() {
   sampleTimer->attachInterrupt(sampleISR);
   sampleTimer->resume();
 
+  //Initialise CAN TX semaphore
+  CAN_TX_Semaphore = xSemaphoreCreateCounting(3,3);
+
   //Initialise CAN Bus
   CAN_Init(true);
   setCANFilter(0x123,0x7ff);
   CAN_RegisterRX_ISR(CAN_RX_ISR);
+  CAN_RegisterTX_ISR(CAN_TX_ISR);
   CAN_Start();
-
-  //Create message input queue
-  //36 messages of 8 bytes, each message takes around 0.7ms to process
-  msgInQ = xQueueCreate(36,8); 
 
   //Initialise serial port
   Serial.begin(9600);
@@ -220,9 +256,19 @@ void setup() {
   NULL,			/* Parameter passed into the task */
   1,			/* Task priority */
   &displayUpdateHandle );	/* Pointer to store the task handle */
+
+  TaskHandle_t CAN_TX_Handle = NULL;
+  xTaskCreate(
+  CAN_TX_Task,		/* Function that implements the task */
+  "CAN_TX",		/* Text name for the task */
+  256 ,      		/* Stack size in words, not bytes */
+  NULL,			/* Parameter passed into the task */
+  1,			/* Task priority */
+  &CAN_TX_Handle );	/* Pointer to store the task handle */
   
   sysState.mutex = xSemaphoreCreateMutex(); //Create mutex
   vTaskStartScheduler();
+
 }
 
 void loop() {

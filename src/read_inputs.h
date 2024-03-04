@@ -10,7 +10,7 @@ const std::size_t inputSize = 20;
 
 struct knob{
   int current_knob_value = 8;
-  int lastIncrement = 8;
+  int lastIncrement = 0;
   int clickState = 0;
 };
 

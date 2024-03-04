@@ -47,6 +47,23 @@ const uint32_t stepSizes[12] = {
   96556749   //B
 };
 
+struct note {
+  uint32_t stepSize;
+  uint32_t phaseAcc;
+  bool active;
+};
+
+std::array<note, 12> notes;
+
+void set_notes(){
+  for (int i = 0; i < 12; i++){
+    notes[i].stepSize = stepSizes[i];
+    notes[i].phaseAcc = 0;
+    notes[i].active = false;
+    Serial.println(notes[i].stepSize);
+  }
+}
+
 void set_pin_directions(){
     pinMode(RA0_PIN, OUTPUT);
     pinMode(RA1_PIN, OUTPUT);

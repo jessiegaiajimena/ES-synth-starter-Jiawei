@@ -49,11 +49,21 @@ void setOutMuxBit(const uint8_t bitIdx, const bool value) {
 }
 
 void sampleISR() {
-  static uint32_t phaseAcc = 0;
-  phaseAcc = currentStepSize ? phaseAcc + currentStepSize : 0;
-  int32_t Vout = (phaseAcc >> 24) - 128;
-  Vout = Vout >> (8 - sysState.knobValues[3].current_knob_value);
-  analogWrite(OUTR_PIN, Vout + 128);
+  uint32_t mixedOutput = 0;
+
+  for (int i = 0; i < 12; i++) {
+    if (notes[i].active) {
+      notes[i].phaseAcc += notes[i].stepSize;
+      int32_t Vout = (notes[i].phaseAcc >> 24) - 128;
+      Vout = Vout >> (8 - sysState.knobValues[3].current_knob_value);
+      mixedOutput += Vout;
+    }
+    else {
+      notes[i].phaseAcc = 0;
+    }
+  }
+
+  analogWrite(OUTR_PIN, mixedOutput  + 128);
 }
 
 void CAN_RX_ISR (void) {
@@ -165,24 +175,27 @@ void decodeTask(void * pvParameters) {
 
     if (RX_Message[0] == 'P'){
       sysState.inputs[RX_Message[1]] = 0;
+      notes[RX_Message[1]].active = true;
     }
     else{
       sysState.inputs[RX_Message[1]] = 1;
+      notes[RX_Message[1]].active = false;
     }
     keys_1 = extractBits<20, 12>(sysState.inputs, 0, 12);
-    for (int i = 0; i < 12; i++){
-      if (keys_1.to_ulong() != 0xFFF){
-        if (keys_1[i] != previou_keys_1[i]){
-          localCurrentStepSize = keys_1[i] ? localCurrentStepSize+ stepSizes[i] : localCurrentStepSize - stepSizes[i];
-        }
-      }
-      else{
-        localCurrentStepSize = 0;
-      }
-    }
+    // for (int i = 0; i < 12; i++){
+    //   if (keys_1.to_ulong() != 0xFFF){
+    //     if (keys_1[i] != previou_keys_1[i]){
+    //       notes[i].active = !keys_1[i];
+    //       Serial.println(notes[i].active);
+    //     }
+    //   }
+    //   else{
+    //     localCurrentStepSize = 0;
+    //   }
+    // }
     previou_keys_1 = keys_1;
-    localCurrentStepSize = localCurrentStepSize * pow(2, sysState.knobValues[2].current_knob_value-4);
-    __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
+    // localCurrentStepSize = localCurrentStepSize * pow(2, sysState.knobValues[2].current_knob_value-4);
+    // __atomic_store_n(&currentStepSize, localCurrentStepSize, __ATOMIC_RELAXED);
   }
 }
 
@@ -228,6 +241,7 @@ void setup() {
   //Initialise serial port
   Serial.begin(9600);
   Serial.println("Hello World");
+  set_notes();
   
   //Create tasks
   TaskHandle_t scanKeysHandle = NULL;

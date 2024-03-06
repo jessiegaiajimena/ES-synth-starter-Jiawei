@@ -51,6 +51,10 @@ void setOutMuxBit(const uint8_t bitIdx, const bool value) {
 void sampleISR() {
   uint32_t mixedOutput = 0;
 
+
+
+
+  //sawtooth representation
   for (int i = 0; i < 12; i++) {
     if (notes[i].active) {
       notes[i].phaseAcc += notes[i].stepSize;

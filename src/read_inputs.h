@@ -72,9 +72,11 @@ void readOneKnob(knob& knob, std::bitset<2> previous_knobs, std::bitset<2> curre
 }
 
 void updateKnob(std::array<knob, 4>& knobValues, std::bitset<8> previous_knobs, std::bitset<8> current_knobs){
+  // xSemaphoreTake(sysState.mutex, portMAX_DELAY);
   for (int i = 0; i < 4; i++){
     readOneKnob(knobValues[3-i], extractBits<8,2>(previous_knobs, 2*i, 2), extractBits<8,2>(current_knobs, 2*i, 2));
   }
+  // xSemaphoreGive(sysState.mutex);
 }
 
 #endif

@@ -31,6 +31,15 @@ const int DEN_BIT = 3;
 const int DRST_BIT = 4;
 const int HKOW_BIT = 5;
 const int HKOE_BIT = 6;
+const uint32_t metronomeTime[7] ={
+  22000,
+  11000,
+  5500,
+  2750,
+  1325,
+  610,
+  300
+};
 
 const uint32_t stepSizes[12] = {
   51149156,  //C
@@ -79,6 +88,9 @@ struct note {
   uint32_t stepSize;
   uint32_t phaseAcc;
   float sinAcc;
+  // float triprevVal;
+  // float triLastIncre;
+  float triAcc;
   bool active;
   
 };

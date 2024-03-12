@@ -7,6 +7,7 @@
 
 #include "read_inputs.h"
 #include "pin_definitions.h"
+#include "instrument_synth.h"
 #include <stdio.h>
 #include <stdatomic.h>
 
@@ -81,6 +82,10 @@ void writeToSampleBuffer(uint32_t Vout, uint32_t writeCtr){
 void backgroundCalcTask(void * pvParameters){
   static uint32_t  phaseAcc=0;
   static float sinAcc=0;
+  static float saxAcc=0;
+  static float prevSinAmp=0;
+  
+  
   while(1){
 
 	  xSemaphoreTake(sampleBufferSemaphore, portMAX_DELAY);
@@ -93,7 +98,9 @@ void backgroundCalcTask(void * pvParameters){
       int tune_knob_value=__atomic_load_n(&sysState.knobValues[2].current_knob_value,__ATOMIC_RELAXED);
       int version_knob_value=__atomic_load_n(&sysState.knobValues[1].current_knob_value,__ATOMIC_RELAXED);
       bool hasActiveKey=false;
-
+      int keynum=0;
+      float sinAmp=0;
+      float triAmp=0;
       for (int i = 0; i < 12; i++) {
         if (writeCtr< SAMPLE_BUFFER_SIZE/2){
 
@@ -119,13 +126,9 @@ void backgroundCalcTask(void * pvParameters){
                 }
              
             
-            // else {
-            //   phaseAcc = 0;
-            // }
-          // __atomic_store_n(&notes.notes[i].phaseAcc, phaseAcc, __ATOMIC_RELAXED);
           }
-          else{
-              // float sinAcc=notes.notes[i].sinAcc;
+          else if(version_knob_value ==7){
+
               if (isactive) {
                 hasActiveKey=true;
                 sinAcc+=sinPhases[i];
@@ -136,30 +139,90 @@ void backgroundCalcTask(void * pvParameters){
                 Vout = Vout >> (8 - vol_knob_value);
                 writeToSampleBuffer(Vout+128, writeCtr);
                 writeCtr+=1;
-                // analogWrite(OUTR_PIN, Vout+128 );
-              }
-              // else{
-              //   sinAcc=0;
 
-              // }
-              // notes.notes[i].sinAcc=sinAcc;
+              }
+
           }
+          else if (version_knob_value ==6){
+            if (isactive) {
+              // hasActiveKey=true;
+              // Serial.print(saxophone_sound(Frequencies[i]));
+              phaseAcc+=int(saxophone_sound(Frequencies[i], &saxAcc)*(pow(2,32)));
+              uint32_t Vout = (phaseAcc >> 24) - 128;
+                Vout = (Vout >> (8 - vol_knob_value))+128 ;
+                writeToSampleBuffer(Vout,writeCtr);
+                writeCtr+=1;
+
+
+            }
+
+          }
+          else if (version_knob_value ==5){
+            float testsinAcc=0;
+            if (isactive) {
+                // testsinAcc=notes.notes[i].sinAcc;
+                keynum+=1;
+                hasActiveKey=true;
+                sinAmp+=generateSin(sinPhases[i],&notes.notes[i].sinAcc);
+
+                // testsinAcc+=sinPhases[i];
+                // if (testsinAcc>=M_PI){
+                //   testsinAcc-=M_PI;
+                // }
+                // sinAmp+=sin(testsinAcc);
+                // notes.notes[i].sinAcc=testsinAcc;
+              }
+            if (i==11 && keynum>0){
+              sinAmp=sinAmp/keynum;
+              // sinAmp= lowPassFilter(sinAmp,prevSinAmp,500.0);
+              // prevSinAmp=sinAmp;
+              uint32_t Vout = static_cast<uint32_t>(sinAmp*127)-128;
+                Vout = Vout >> (8 - vol_knob_value);
+                writeToSampleBuffer(Vout+128, writeCtr);
+                writeCtr+=1;
+            }
           
-      	}
+          }
+          else{
+            
+            if (isactive){
+              keynum+=1;
+              hasActiveKey=true;
+              // float triAcc= notes.notes[i].triAcc;
+              // float tmp= generateTriangleWaveValue(Frequencies[i], &notes.notes[i].triprevVal,&notes.notes[i].triLastIncre);
+              float tmp=generateTriangleWaveValue(Frequencies[i],&notes.notes[i].triAcc);
+              // notes.notes[i].triAcc=triAcc+tmp;
+              triAmp+=tmp;
+            }
+            if (i==11 && keynum>0){
+              triAmp=triAmp/keynum;
+              // sinAmp= lowPassFilter(sinAmp,prevSinAmp,500.0);
+              // prevSinAmp=sinAmp;
+              uint32_t Vout = static_cast<uint32_t>(triAmp*255)-128;
+                Vout = Vout >> (8 - vol_knob_value);
+                writeToSampleBuffer(Vout+128, writeCtr);
+                writeCtr+=1;
+            }
+
+          }
+        }
       }
-        if(!hasActiveKey && writeCtr< SAMPLE_BUFFER_SIZE/2){
+      if(!hasActiveKey && writeCtr< SAMPLE_BUFFER_SIZE/2){
             writeToSampleBuffer(0,writeCtr);
             writeCtr+=1;
           }
-  }
-    }  
 
- }
+      }
+        }  
+
+ 
+}
 
 
 void sampleISR() {
   static uint32_t readCtr = 0;
-
+  int metronome_knob_value=__atomic_load_n(&sysState.knobValues[0].current_knob_value,__ATOMIC_RELAXED);
+  static uint32_t metronomeCounter=0;
   if (readCtr == SAMPLE_BUFFER_SIZE/2) {
     readCtr = 0;
     
@@ -167,20 +230,28 @@ void sampleISR() {
     // Serial.print("gave buffer");
     xSemaphoreGiveFromISR(sampleBufferSemaphore, NULL);
     }
-    
+  if (metronome_knob_value!=8 && metronomeCounter>=metronomeTime[7-metronome_knob_value]){ 
+    analogWrite(OUTR_PIN, 255);
+    metronomeCounter=0;
+  }
+  else{
   if (writeBuffer1){
     
     analogWrite(OUTR_PIN, sampleBuffer0[readCtr++]);
+    metronomeCounter+=1;
     // readCtr+=1;
     // sampleBuffer0[readCtr]=128;
     }
   else{
     
     analogWrite(OUTR_PIN, sampleBuffer1[readCtr++]);
+    metronomeCounter+=1;
     // readCtr+=1;
     // sampleBuffer1[readCtr]=128;
   }
+  }
 
+}
 
 
 
@@ -222,7 +293,9 @@ void sampleISR() {
   //sawtooth representation
   // int vol_knob_value=__atomic_load_n(&sysState.knobValues[3].current_knob_value,__ATOMIC_RELAXED);
   // int tune_knob_value=__atomic_load_n(&sysState.knobValues[2].current_knob_value,__ATOMIC_RELAXED);
-
+  // static uint32_t phase=0;
+  // uint32_t pAcc=0;
+  // int numkey=0;
   // for (int i = 0; i < 12; i++) {
     
   //   uint32_t phaseAcc=__atomic_load_n(&notes.notes[i].phaseAcc,__ATOMIC_RELAXED);
@@ -235,10 +308,12 @@ void sampleISR() {
   //     else{
   //       phaseAcc+=stepSize >> -(tune_knob_value-4);
   //     }
-  //     int32_t Vout = (phaseAcc >> 24) - 128;
-  //     Vout = Vout >> (8 - vol_knob_value);
+  //     numkey+=1;
+  //     pAcc+=stepSize;
+  //     // int32_t Vout = (phaseAcc >> 24) - 128;
+  //     // Vout = Vout >> (8 - vol_knob_value);
 
-  //     analogWrite(OUTR_PIN, Vout + 128);
+  //     // analogWrite(OUTR_PIN, Vout + 128);
   //   }
   //   else {
   //     phaseAcc = 0;
@@ -246,10 +321,16 @@ void sampleISR() {
   //   __atomic_store_n(&notes.notes[i].phaseAcc, phaseAcc, __ATOMIC_RELAXED);
     
   // }
+  // if(numkey>0){
+  // phase+=static_cast<u_int32_t> (pAcc/numkey);}
+  // int32_t Vout = (phase >> 24) - 128;
+  // Vout = Vout >> (8 - vol_knob_value);
+
+  // analogWrite(OUTR_PIN, Vout + 128);
   
 
- // }
-}
+ 
+// }
 
 void CAN_RX_ISR (void) {
 	uint8_t RX_Message_ISR[8];

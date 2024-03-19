@@ -3,6 +3,7 @@
 
 #define SAMPLE_RATE 22000
 #define AMPLITUDE 0.5
+#define TABLE_SIZE 256
 
 // ADSR envelope parameters
 float attack_time = 0.1;
@@ -22,6 +23,25 @@ float lfo_depth = 0.01;
 // Noise parameters
 float noise_level = 0.1;
 float noise_filter_cutoff = 0.8;
+
+float lfoFreq=10.0;
+float lfoPhase=lfoFreq*M_PI*2/SAMPLE_RATE;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // Function to generate a sawtooth wave
 float sawtooth(float phase) {
@@ -48,13 +68,7 @@ float adsr_envelope(float time, float duration) {
     return envelope;
 }
 
-// Function to apply a low-pass filter
-// float low_pass_filter(float input, float cutoff, float resonance, float* state) {
-//     float output = input * cutoff + *state * (1.0 - cutoff);
-//     *state = output;
-//     return output;
-// }
-// Function to apply a low-pass filter with resonance
+
 float lowPassFilter(float cur, float prev, float cutoffFreq) {
     float rc = 1.0f / (2.0f * M_PI * cutoffFreq);
     float dt = 1.0f / SAMPLE_RATE;
@@ -142,22 +156,6 @@ float generateTriangleWave( float frequency ){
     return value;
 }
 
-// float generateTriangleWaveValue(float frequency, float* prevValue, float* prevIncrement) {
-//     float period = SAMPLE_RATE / frequency;
-//     float increment = 4.0f * AMPLITUDE / period;
-
-//     float value = *prevValue;
-//     if (value >= AMPLITUDE) {
-//         increment = -increment;
-//     } else if (value <= -AMPLITUDE) {
-//         increment = -increment;
-//     }
-//     value += *prevIncrement;
-//     *prevValue = value;
-//     *prevIncrement = increment;
-
-//     return value;
-// }
 float generateTriangleWaveValue(float frequency, float* phase) {
     *phase += frequency / SAMPLE_RATE;
     if (*phase > 1.0f) {
@@ -181,4 +179,171 @@ float generateSin( float sinPhase, float* phase){
     }
     *phase=testsinAcc;
     return sin(testsinAcc);
+}
+
+
+float getSample(float phaseIcre, float* phaseAcc, float table[]) {
+    *phaseAcc+=phaseIcre;
+    if (int(*phaseAcc*TABLE_SIZE)>TABLE_SIZE){
+        *phaseAcc-=1;
+    }
+    int index = (int)(*phaseAcc * TABLE_SIZE);
+    index = index % TABLE_SIZE;
+    return table[index];
+}
+float LFOAcc=0;
+float generateLFO(int reduceVal){
+    float amp=getSample(lfoPhase,&LFOAcc,sineTable)/reduceVal;
+    return amp;
+}
+// float sinTable[256];
+
+// void generateSinLUT(){
+//     float step=(1/256)*2*M_PI;
+//     for (int i=0; i<TABLE_SIZE;i++){
+//         sinTable[i]=sin(step*i);
+//     }
+// }
+int calcEnvelope(int pressedCount){
+    int press=3;
+    int decay=4;
+    if (pressedCount<press){
+        return 0;
+    }
+    else{
+        return int( (pressedCount-press)/3);
+    }
+
+}
+u_int32_t calcSawtoothVout(u_int32_t phaseAcc,int volume, int i){
+    uint32_t Vout = (phaseAcc >> 24) - 128;
+    int v=calcEnvelope(notes.notes[i].pressedCount);
+    int volshift=8 - volume+v;
+
+    Vout = ((Vout+128) >> (volshift)) ;
+    return Vout;
+}
+u_int32_t calcNoProcessSawtoothVout(u_int32_t phaseAcc,int volume, int tune){
+    
+    uint32_t Vout = (phaseAcc >> 24) - 128;
+
+    // int v=calcEnvelope(notes.notes[i].pressedCount);
+    int volshift=8 - volume;
+
+    Vout = ((Vout+128) >> (volshift)) ;
+    return Vout;
+}
+
+
+
+u_int32_t calcOtherVout(float Amp,int volume, int i){
+    uint32_t Vout = static_cast<uint32_t>(Amp *127) - 128;
+    int v=calcEnvelope(notes.notes[i].pressedCount);
+    int volshift=8 - volume+v;
+    if (volshift>=0){
+
+    Vout = ((Vout+128) >> (volshift)) ;}
+    else {Vout = ((Vout+128) << -(volshift)) ;}
+
+    return Vout;
+}
+
+u_int32_t calcNoEnvelopeVout(float Amp,int volume){
+    uint32_t Vout = static_cast<uint32_t>(Amp *127) - 128;
+    // int v=calcEnvelope(notes.notes[i].pressedCount);
+    int volshift=8 - volume;
+    if (volshift>=0){
+
+    Vout = ((Vout+128) >> (volshift)) ;}
+    else {Vout = ((Vout+128) << -(volshift)) ;}
+
+    return Vout;
+}
+
+
+
+int adsrPiano(int pressedCount){
+    int attack=1;
+    int decay=4;
+    int sustain=10;
+    if (pressedCount<attack && pressedCount>0){
+        return 2-pressedCount;
+    }
+    else if (pressedCount>= attack && decay>=pressedCount){
+        return int( (pressedCount-attack));
+    }
+    else if(pressedCount>decay && pressedCount<sustain){
+        return int( (decay-attack));
+    }
+
+    else{
+        return (decay-attack)+floor((pressedCount-decay));
+    }
+
+
+}
+
+int adsrHorn(int pressedCount){
+    int lowtime=3; 
+    // int hightime;
+    int lowval=2;
+    int highval=-2;
+    int loopduration=20;
+    static int countlow=0;
+    static int counthigh=0;
+    if ((pressedCount%loopduration)<=lowtime){
+        counthigh=0;
+        if (countlow<lowval){
+            
+            countlow+=1;
+        }
+        return countlow;
+    }
+    else{
+        countlow=0;
+        if (counthigh>highval){
+            counthigh-=1;
+        }
+        return counthigh;
+    }
+    
+}
+u_int32_t calcPianoVout(float Amp,int volume, int i){
+    Amp+=generateLFO(2);
+    uint32_t Vout = static_cast<uint32_t>(Amp *127) - 128;
+    int v=adsrPiano(notes.notes[i].pressedCount);
+    // int v=adsrHorn(notes.notes[i].pressedCount);
+    int volshift=8 - volume+v;
+    if (volshift>=0){
+
+    Vout = ((Vout+128) >> (volshift)) ;}
+    else {Vout = ((Vout+128) << -(volshift)) ;}
+
+    return Vout;
+}
+u_int32_t calcHornVout(float Amp,int volume, int i){
+    Amp+=generateLFO(2);
+    uint32_t Vout = static_cast<uint32_t>(Amp *127) - 128;
+    int v=adsrHorn(notes.notes[i].pressedCount);
+    // int v=adsrHorn(notes.notes[i].pressedCount);
+    int volshift=8 - volume+v;
+    if (volshift>=0){
+
+    Vout = ((Vout+128) >> (volshift)) ;}
+    else {Vout = ((Vout+128) << -(volshift)) ;}
+
+    return Vout;
+}
+
+
+void presssedTimeCount(){
+    for (int i=0;i<12;i++){
+        bool isactive=__atomic_load_n(&notes.notes[i].active,__ATOMIC_RELAXED);
+        if (isactive){
+            notes.notes[i].pressedCount+=1;
+        }
+        else{
+            notes.notes[i].pressedCount=0;
+        }
+    }
 }

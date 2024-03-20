@@ -182,27 +182,31 @@ float generateSin( float sinPhase, float* phase){
 }
 
 
-float getSample(float phaseIcre, float* phaseAcc, float table[]) {
+float getSample(float phaseIcre, float* phaseAcc, float table[],int tablesize) {
     *phaseAcc+=phaseIcre;
-    if (int(*phaseAcc*TABLE_SIZE)>TABLE_SIZE){
+    if (int(*phaseAcc*tablesize)>tablesize){
         *phaseAcc-=1;
     }
-    int index = (int)(*phaseAcc * TABLE_SIZE);
-    index = index % TABLE_SIZE;
+    int index = (int)(*phaseAcc * tablesize);
+    index = index % tablesize;
     return table[index];
 }
 float LFOAcc=0;
 float generateLFO(int reduceVal){
-    float amp=getSample(lfoPhase,&LFOAcc,sineTable)/reduceVal;
+    float amp=getSample(lfoPhase,&LFOAcc,sineTable,TABLE_SIZE)/reduceVal;
     return amp;
 }
-// float sinTable[256];
+// float sinTable[1024];
 
-// void generateSinLUT(){
-//     float step=(1/256)*2*M_PI;
-//     for (int i=0; i<TABLE_SIZE;i++){
-//         sinTable[i]=sin(step*i);
+// void generateSinLUT(float *table=sinTable){
+//     float stable[64];
+//     float step=(1/64)*2*M_PI;
+//     for (int i=0; i<64;i++){
+//         stable[i]=sin(step*i);
+//         // Serial.println(stable[i]);
 //     }
+
+// }
 // }
 int calcEnvelope(int pressedCount){
     int press=3;
@@ -249,13 +253,13 @@ u_int32_t calcOtherVout(float Amp,int volume, int i){
 }
 
 u_int32_t calcNoEnvelopeVout(float Amp,int volume){
-    uint32_t Vout = static_cast<uint32_t>(Amp *127) - 128;
+    uint32_t Vout = static_cast<uint32_t>(Amp *127);
     // int v=calcEnvelope(notes.notes[i].pressedCount);
     int volshift=8 - volume;
     if (volshift>=0){
 
-    Vout = ((Vout+128) >> (volshift)) ;}
-    else {Vout = ((Vout+128) << -(volshift)) ;}
+    Vout = ((Vout) >> (volshift)) ;}
+    else {Vout = ((Vout) << -(volshift)) ;}
 
     return Vout;
 }

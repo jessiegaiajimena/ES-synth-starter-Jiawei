@@ -58,7 +58,7 @@ void setOutMuxBit(const uint8_t bitIdx, const bool value) {
 // #define SAMPLE_RATE 22000
 // #define FREQUENCY 440
 // #define TWOPI 6.283185307
-const int SAMPLE_BUFFER_SIZE =1100;
+const int SAMPLE_BUFFER_SIZE =4400;
 uint8_t sampleBuffer0[SAMPLE_BUFFER_SIZE/2];
 uint8_t sampleBuffer1[SAMPLE_BUFFER_SIZE/2];
 SemaphoreHandle_t sampleBufferSemaphore;
@@ -78,6 +78,7 @@ void writeToSampleBuffer(uint32_t Vout, uint32_t writeCtr){
                 sampleBuffer0[writeCtr] = Vout ;
             }
 }
+#define TABLE_SIZE 256
 
 void backgroundCalcTask(void * pvParameters){
   static uint32_t  phaseAcc=0;
@@ -123,12 +124,25 @@ void backgroundCalcTask(void * pvParameters){
                 uint32_t Vout = (phaseAcc >> 24) - 128;
                 Vout = (Vout >> (8 - vol_knob_value))+128 ;
                 // uint32_t Vout =calcSawtoothVout(phaseAcc,vol_knob_value,i);
-                
+                // sinAmp+=Vout;
                 writeToSampleBuffer(Vout,writeCtr);
                 writeCtr+=1;
+                // keynum+=1;
+                // hasActiveKey=true;
                 
-                // notes.notes[i].phaseAcc=phaseAcc;
                 }
+            //     if (i==11 && keynum>0){
+            //     sinAmp=sinAmp/keynum;
+            //     // sinAmp=calcNoEnvelopeVout(sinAmp,vol_knob_value);
+            //     // uint32_t Vout = static_cast<uint32_t>(sinAmp*127)-128;
+            //     // Vout = Vout >> (8 - vol_knob_value);
+            //     // writeToSampleBuffer(Vout+128, writeCtr);
+            //     // sinAmp+=generateLFO();
+
+            //     writeToSampleBuffer(int(sinAmp)  , writeCtr);
+            //     writeCtr+=1;
+            // }
+                
 
              
             
@@ -138,7 +152,7 @@ void backgroundCalcTask(void * pvParameters){
               if (isactive) {
                 keynum+=1;
                 hasActiveKey=true;
-                sinAmp+=getSample(notePhases[(tune_knob_value-1)*4+i],&notes.notes[i].sinAcc,sineTable);
+                sinAmp+=getSample(notePhases[(tune_knob_value-1)*12+i],&notes.notes[i].sinAcc,sinTable,512);
 
                 // uint32_t Vout = calcOtherVout(getSample(notePhases[(tune_knob_value-1)*4+i],&sinAcc,sineTable),vol_knob_value,i);
                 
@@ -169,7 +183,7 @@ void backgroundCalcTask(void * pvParameters){
                 hasActiveKey=true;
                 // sinAmp+=generateSin(sinPhases[i],&notes.notes[i].sinAcc);
                 // ;
-                sinAmp+=calcOtherVout( getSample(notePhases[(tune_knob_value-1)*4+i],&notes.notes[i].sinAcc,sineTable),vol_knob_value,i);
+                sinAmp+=calcOtherVout( getSample(notePhases[(tune_knob_value-1)*12+i],&notes.notes[i].sinAcc,sineTable,TABLE_SIZE),vol_knob_value,i);
 
                 
               }
@@ -188,7 +202,7 @@ void backgroundCalcTask(void * pvParameters){
                 keynum+=1;
                 hasActiveKey=true;
                 // sinAmp+=generateSin(sinPhases[i],&notes.notes[i].sinAcc);
-                sinAmp+=getSample(notePhases[(tune_knob_value-1)*4+i],&notes.notes[i].sinAcc,pianoTable);
+                sinAmp+=getSample(notePhases[(tune_knob_value-1)*12+i],&notes.notes[i].sinAcc,pianoTable,TABLE_SIZE);
                 // testsinAcc+=sinPhases[i];
                 // if (testsinAcc>=M_PI){
                 //   testsinAcc-=M_PI;
@@ -213,8 +227,8 @@ void backgroundCalcTask(void * pvParameters){
              if (isactive){
             keynum+=1;
             hasActiveKey=true;
-            float phase=notePhases[(tune_knob_value-1)*4+i];
-            float amp=getSample(phase,&notes.notes[i].sinAcc, squareTable);
+            float phase=notePhases[(tune_knob_value-1)*12+i];
+            float amp=getSample(phase,&notes.notes[i].sinAcc, squareTable,TABLE_SIZE);
             pianoAmp+=calcHornVout(amp,vol_knob_value,i);
 
              }
@@ -232,8 +246,8 @@ void backgroundCalcTask(void * pvParameters){
              if (isactive){
             keynum+=1;
             hasActiveKey=true;
-            float phase=notePhases[(tune_knob_value-1)*4+i];
-            float amp=getSample(phase,&notes.notes[i].sinAcc, saxophoneTable);
+            float phase=notePhases[(tune_knob_value-1)*12+i];
+            float amp=getSample(phase,&notes.notes[i].sinAcc, saxophoneTable,TABLE_SIZE);
             pianoAmp+=calcPianoVout(amp,vol_knob_value,i);
              }
           
@@ -250,8 +264,8 @@ void backgroundCalcTask(void * pvParameters){
              if (isactive){
             keynum+=1;
             hasActiveKey=true;
-            float phase=notePhases[(tune_knob_value-1)*4+i];
-            pianoAmp+=getSample(phase,&notes.notes[i].sinAcc, saxophoneTable);
+            float phase=notePhases[(tune_knob_value-1)*12+i];
+            pianoAmp+=getSample(phase,&notes.notes[i].sinAcc, saxophoneTable,TABLE_SIZE);
              }
           
           if (i==11 && keynum>0){
@@ -272,7 +286,7 @@ void backgroundCalcTask(void * pvParameters){
               // float triAcc= notes.notes[i].triAcc;
               // float tmp= generateTriangleWaveValue(Frequencies[i], &notes.notes[i].triprevVal,&notes.notes[i].triLastIncre);
               // float tmp=generateTriangleWaveValue(Frequencies[i],&notes.notes[i].triAcc);
-              triAmp+=getSample(notePhases[(tune_knob_value-1)*4+i],&notes.notes[i].triAcc,triangleTable);
+              triAmp+=getSample(notePhases[(tune_knob_value-1)*12+i],&notes.notes[i].triAcc,triangleTable,TABLE_SIZE);
               // notes.notes[i].triAcc=triAcc+tmp;
               // triAmp+=tmp;
             }
@@ -569,10 +583,13 @@ void CAN_TX_Task (void * pvParameters) {
 
 void setup() {
   // init_samplebuffer();
+  
   sysState.knobValues[2].current_knob_value = 4;
   sysState.knobValues[3].current_knob_value = 4;
   generatePhaseLUT();
   // generateSinLUT();
+  // Serial.print("sintable");
+  // Serial.print(sinTable[4]);
   //Set pin directions
   set_pin_directions();
 
